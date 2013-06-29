@@ -7,10 +7,10 @@
  * 该类的作用
  * 
  * 作者：邓太华     时间：2008-10-12
- * 版本：V3.0
+ * 版本：V4.5
  * 
- * 修改者：         时间：                
- * 修改说明：
+ * 修改者：         时间：2012-11-1                
+ * 修改说明：收集数据的时候，改进对SQLite的支持
  * ========================================================================
 */
 using System;
@@ -21,6 +21,7 @@ using System.Web;
 using System.Web.UI ;
 using PWMIS.DataProvider.Data ;
 using PWMIS.Common;
+using PWMIS.Web.Controls;
 
 namespace PWMIS.DataProvider.Adapter
 {
@@ -294,7 +295,7 @@ namespace PWMIS.DataProvider.Adapter
 		/// <returns>
 		/// ArrayList 中的成员为 IBCommand 对象，包含具体的CRUD SQL
 		///</returns>
-        public static List<IBCommand> GetIBFormData(ControlCollection Controls)
+        public static List<IBCommand> GetIBFormData(ControlCollection Controls,CommonDB DB)
 		{
             List<IDataControl> IBControls = new List<IDataControl>();
 			findIBControls(IBControls ,Controls );
@@ -312,6 +313,9 @@ namespace PWMIS.DataProvider.Adapter
 				int nullCount=0;
 				int ID=-1;
 
+                int paraIndex = 0;
+                List<IDataParameter> paraList = new List<IDataParameter>();
+
 				for(int i=0;i<IBControls.Count ;i++)// object objCtr in IBControls)
 				{
 					object objCtr=IBControls[i];
@@ -324,50 +328,73 @@ namespace PWMIS.DataProvider.Adapter
 							if(strTableName=="" && ibCtr.LinkObject!="")
 							{
 								strTableName=ibCtr.LinkObject;
-								strInsert="INSERT INTO "+strTableName+"(";
-								strUpdate="UPDATE "+strTableName+" SET ";
+								strInsert="INSERT INTO ["+strTableName+"](";
+								strUpdate="UPDATE ["+strTableName+"] SET ";
 							}
 							//找到当前处理的表，只有非只读的字段可以更新
 							if(strTableName==ibCtr.LinkObject && ibCtr.LinkProperty!="" )
-							{
-								string cValue=ibCtr.GetValue ().ToString ().Replace ("'","''");
+                            {
+                                #region 原来获取值得方法
+                                //string cValue=ibCtr.GetValue ().ToString ().Replace ("'","''");
 								
-								//dth,2008.4.11 处理字符串类型为空的情况
-								//防止SQL注入式攻击
-								//不论是否为空都进行字符串类型测试
-								if(ibCtr.SysTypeCode==System.TypeCode.String || ibCtr.SysTypeCode==System.TypeCode.Empty)
-								{
-									cValue="'"+ cValue +"'";
-								}
-								else
-								{
-									if(cValue!="")
-									{
-										if(ibCtr.SysTypeCode==System.TypeCode.Boolean )
-											cValue=(cValue.ToUpper ()=="TRUE"?"1":"0");
-										else if(ibCtr.SysTypeCode==System.TypeCode.DateTime )
-											cValue="'"+ cValue +"'";//SQL SERVER 日期格式
-										else if(ibCtr.SysTypeCode==System.TypeCode.DBNull )
-										{
-											cValue="NULL";
-										}
-										else if(ibCtr.SysTypeCode==System.TypeCode.Object )
-										{
-											//Object 标记不做任何处理，例如可以使用最大值加一获取主键值
+                                ////dth,2008.4.11 处理字符串类型为空的情况
+                                ////防止SQL注入式攻击
+                                ////不论是否为空都进行字符串类型测试
+                                //if(ibCtr.SysTypeCode==System.TypeCode.String || ibCtr.SysTypeCode==System.TypeCode.Empty)
+                                //{
+                                //    cValue="'"+ cValue +"'";
+                                //}
+                                //else
+                                //{
+                                //    if(cValue!="")
+                                //    {
+                                //        if(ibCtr.SysTypeCode==System.TypeCode.Boolean )
+                                //            cValue=(cValue.ToUpper ()=="TRUE"?"1":"0");
+                                //        else if(ibCtr.SysTypeCode==System.TypeCode.DateTime )
+                                //        {
+                                //            if (DB.CurrentDBMSType == DBMSType.SQLite)
+                                //                cValue = "'" + DateTime.Parse(cValue).ToString("s") + "'";
+                                //            else
+                                //                cValue = "'" + cValue + "'";//SQL SERVER 日期格式
+                                        
+                                //        }
+                                //        else if(ibCtr.SysTypeCode==System.TypeCode.DBNull )
+                                //        {
+                                //            cValue="NULL";
+                                //        }
+                                //        else if(ibCtr.SysTypeCode==System.TypeCode.Object )
+                                //        {
+                                //            //Object 标记不做任何处理，例如可以使用最大值加一获取主键值
 											
-										}
-										else if(!(ibCtr.SysTypeCode==System.TypeCode.String || ibCtr.SysTypeCode==System.TypeCode.Empty))
-										{
-											//如果不是字符串那么试图进行数字转换
-											cValue=Convert.ToDouble (cValue).ToString ();
-										}
+                                //        }
+                                //        else if(!(ibCtr.SysTypeCode==System.TypeCode.String || ibCtr.SysTypeCode==System.TypeCode.Empty))
+                                //        {
+                                //            //如果不是字符串那么试图进行数字转换
+                                //            cValue=Convert.ToDouble (cValue).ToString ();
+                                //        }
 
-									}
-								}
-								
-								//非只读的数据才更新
-								if(cValue!="")
+                                //    }
+                                //}
+                                #endregion
+
+                                string cValue = string.Empty;
+                                object ctlValue = ibCtr.GetValue();
+
+                                //非只读的数据才更新
+                                if (ctlValue!=DBNull.Value)
 								{
+                                    cValue = DB.GetParameterChar+ "P"+paraIndex++;
+                                    IDataParameter para = DB.GetParameter(cValue, ctlValue);
+                                    if (ibCtr.SysTypeCode == System.TypeCode.String || ibCtr.SysTypeCode == System.TypeCode.Empty)
+                                    {
+                                        if (ibCtr is DataTextBox)
+                                        {
+                                            int maxStringLength = ((DataTextBox)ibCtr).MaxLength;
+                                            ((IDbDataParameter)para).Size = maxStringLength;
+                                        }
+                                    }
+                                    paraList.Add(para);
+
                                     //2010.1.25 取消 ibCtr.PrimaryKey 不能更新的限制，例如可以让GUID主键列可以更新
                                     //如果是自增列，设置该列的控件属性为 只读属性即可。
                                     if (!ibCtr.ReadOnly) 
@@ -380,7 +407,7 @@ namespace PWMIS.DataProvider.Adapter
                                     {
                                         strCondition += " And " + ibCtr.LinkProperty + "=" + cValue;
                                         if (ibCtr.SysTypeCode == System.TypeCode.Int32)
-                                            ID = int.Parse(cValue);
+                                            ID = int.Parse(ctlValue.ToString());
                                         else
                                             ID = -2;//主键可能是非数字型
                                        
@@ -407,7 +434,9 @@ namespace PWMIS.DataProvider.Adapter
 				ibcmd.InsertCommand=strInsert ;
 				ibcmd.UpdateCommand =strUpdate ;
                 //if( ID>0) 
-                    ibcmd.InsertedID =ID; 
+                    ibcmd.InsertedID =ID;
+                    ibcmd.Parameters = paraList.ToArray();
+
 				IBCommands.Add (ibcmd);
 			}//end while
 
@@ -427,23 +456,35 @@ namespace PWMIS.DataProvider.Adapter
         /// <returns></returns>
         public List<IBCommand> AutoUpdateIBFormData(ControlCollection Controls)
 		{
-			List<IBCommand > ibCommandList=GetIBFormData(Controls);
+			List<IBCommand > ibCommandList=GetIBFormData(Controls,this.DAO);
 			int result=0;
 			foreach(object item in ibCommandList)
 			{
 				IBCommand command=(IBCommand)item;
 				if(command.InsertedID >0)
-					result=DAO.ExecuteNonQuery (command.UpdateCommand );
+					result=DAO.ExecuteNonQuery (command.UpdateCommand,CommandType.Text,command.Parameters );//修改未合并
                 else if (command.InsertedID ==-2)
                 {
-                    result = DAO.ExecuteNonQuery(command.UpdateCommand);
+                    result = DAO.ExecuteNonQuery(command.UpdateCommand, CommandType.Text, command.Parameters);
                     if (result <= 0)
-                        result = DAO.ExecuteNonQuery(command.InsertCommand);
+                    {
+                        //2013-3-8 已经不需要克隆，看CommandDB
+                        ////参数已经被使用，必须克隆一份
+                        //IDataParameter[] paras = new IDataParameter[command.Parameters.Length];
+                        //int index = 0;
+                        //foreach (IDataParameter old in command.Parameters)
+                        //{
+                        //    paras[index++] = (IDataParameter)((ICloneable)old).Clone();
+                        //}
+                        ////
+                        //result = DAO.ExecuteNonQuery(command.InsertCommand, CommandType.Text, paras);
+                        result = DAO.ExecuteNonQuery(command.InsertCommand, CommandType.Text, command.Parameters);
+                    }
                 }
 				else
 				{
 					object id=0;
-					result=DAO.ExecuteInsertQuery (command.InsertCommand,ref id );
+					result=DAO.ExecuteInsertQuery (command.InsertCommand,CommandType.Text,command.Parameters,ref id);
 					command.InsertedID=Convert.ToInt32 (id);
 				}
 				if(result<=0 && _CheckRowUpdateCount)
@@ -454,23 +495,23 @@ namespace PWMIS.DataProvider.Adapter
 		}
 
         /// <summary>
-        /// 自动更新含有GUID主键的窗体数据，注该GUID控件必须设置PrimaryKey属性
+        /// 自动更新含有GUID主键或字符型主键的窗体数据，注该控件必须设置PrimaryKey属性
         /// </summary>
         /// <param name="Controls">控件集合</param>
-        /// <param name="guidControl">Gudi控件</param>
+        /// <param name="guidControl">Gudi或字符型主键控件</param>
         /// <returns>更新是否成功</returns>
         public bool  AutoUpdateIBFormData(ControlCollection Controls,  IDataControl guidControl)
         {
             object  guidObj=guidControl.GetValue();
             if (guidObj == null || guidObj.ToString() == "")
-                throw new Exception("GUID 主键列更新数据不能为空！");
+                throw new Exception("GUID 主键或字符型主键列更新数据不能为空！");
             if (guidControl.ReadOnly  )
-                throw new Exception("GUID 主键列更新数据时不能设置为只读！");
+                throw new Exception("GUID 主键或字符型主键列更新数据时不能设置为只读！");
             if (!guidControl.PrimaryKey )
-                throw new Exception("GUID 主键列更新数据时必须设置PrimaryKey属性！");
+                throw new Exception("GUID 主键或字符型主键列更新数据时必须设置PrimaryKey属性！");
 
             string guidText = guidObj.ToString();
-            List<IBCommand> ibCommandList = GetIBFormData(Controls);
+            List<IBCommand> ibCommandList = GetIBFormData(Controls,this.DAO);
             int result = 0;
             foreach (IBCommand command in ibCommandList)
             {
@@ -481,11 +522,11 @@ namespace PWMIS.DataProvider.Adapter
                     if (guidInDb != null && guidInDb.ToString() == guidText)
                     {
                         //在数据库中有该记录
-                        result = DAO.ExecuteNonQuery(command.UpdateCommand);
+                        result = DAO.ExecuteNonQuery(command.UpdateCommand, CommandType.Text, command.Parameters);
                     }
                     else
                     {
-                        result = DAO.ExecuteNonQuery(command.InsertCommand );
+                        result = DAO.ExecuteNonQuery(command.InsertCommand, CommandType.Text, command.Parameters);
                     }
                     return result>0 ;
                 }

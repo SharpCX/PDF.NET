@@ -23,14 +23,24 @@ namespace SuperMarketWeb
             {
                 this.tbCustomerInfo.Visible = false;
             }
-            if (!SuperMarketBIZ.Instance.InBusiness)
+            try
             {
-                if (!SuperMarketBIZ.Instance.StartBusiness())
+                if (!SuperMarketBIZ.Instance.InBusiness)
                 {
-                    this.lblMsg.Text = SuperMarketBIZ.Instance.Message ;
+                    if (!SuperMarketBIZ.Instance.StartBusiness())
+                    {
+                        this.lblMsg.Text = SuperMarketBIZ.Instance.Message;
+                    }
                 }
-            }
 
+            }
+            catch (Exception ex)
+            {
+                string errmsg = ex.Message;
+                Session["errmsg"] = errmsg;
+                Response.Redirect("Setup/CreateAppTables.aspx");
+            }
+            
            
 
 

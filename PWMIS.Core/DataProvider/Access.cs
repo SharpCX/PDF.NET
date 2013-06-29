@@ -7,10 +7,13 @@
  * 该类的作用
  * 
  * 作者：邓太华     时间：2008-10-12
- * 版本：V4.3
+ * 版本：V4.5
  * 
- * 修改者：         时间：                
- * 修改说明：
+ * 修改者：         时间：2013-2- 24               
+ * 修改说明：解决Access 某些版本在更新DateTime类型的时候，参数化查询出现 “准表达式中数据类型不匹配”的问题。
+ * 
+ *  * 修改者：         时间：2013-3- 19               
+ * 修改说明：解决Access 生成建表脚本的问题 
  * ========================================================================
 */
 using System;
@@ -42,7 +45,7 @@ namespace PWMIS.DataProvider.Data
             get
             {
                 if (string.IsNullOrEmpty(_insertKey))
-                    return "@@IDENTITY";
+                    return "SELECT @@IDENTITY";
                 else
                     return _insertKey;
             }
@@ -50,6 +53,45 @@ namespace PWMIS.DataProvider.Data
             {
                 _insertKey = value;
             }
+        }
+
+        public override IDataParameter GetParameter(string paraName, object Value)
+        {
+            IDataParameter para = base.GetParameter(paraName, Value);
+            if(Value is DateTime)
+                ((OleDbParameter)para).OleDbType = OleDbType.DBDate;
+            return para;
+        }
+
+        public override IDataParameter GetParameter(string paraName, DbType dbType)
+        {
+            IDataParameter para = this.GetParameter();
+            para.ParameterName = paraName;
+            para.DbType = dbType;
+            if(dbType== DbType.DateTime)
+                ((OleDbParameter)para).OleDbType = OleDbType.DBDate;
+            return para;
+        }
+
+        public override IDataParameter GetParameter(string paraName, System.Data.DbType dbType, int size)
+        {
+            OleDbParameter para = new OleDbParameter();
+            para.ParameterName = paraName;
+            para.DbType = dbType;
+            para.Size = size;
+            if (dbType == DbType.DateTime)
+                ((OleDbParameter)para).OleDbType = OleDbType.DBDate;
+            return para;
+        }
+
+        public override string GetNativeDbTypeName(IDataParameter para)
+        {
+            OleDbType type = ((OleDbParameter)para).OleDbType;
+            if (type == OleDbType.VarWChar)
+                type = OleDbType.VarChar;
+            else if (type == OleDbType.DBDate)
+                type = OleDbType.Date;
+            return type.ToString();
         }
     }
     

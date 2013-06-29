@@ -1,5 +1,7 @@
 ﻿--创建超市信息表，数据库类型：SqlServer
 
+
+
 create table [客户表]
 (
 [客户号] varchar(38) primary key, 
